@@ -1,0 +1,83 @@
+---
+- name: Create and Run ML Environment with Virtualenv
+  hosts: all
+  remote_user: ubuntu
+  vars:
+    ansible_ssh_private_key_file: ./.ssh/myKey.pem
+  become: yes
+
+  tasks:
+    - name: Install required system packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+          - nginx
+        state: present
+
+    - name: Create a virtual environment for Python
+      command: python3 -m venv /home/ubuntu/venv
+
+    - name: Install required Python libraries
+      command: /home/ubuntu/venv/bin/pip install pandas numpy matplotlib seaborn scikit-learn
+      environment:
+        PATH: /home/ubuntu/venv/bin:{{ ansible_env.PATH }}
+
+    - name: Install Jupyter and nbconvert in the virtual environment
+      command: /home/ubuntu/venv/bin/pip install notebook nbconvert
+      environment:
+        PATH: /home/ubuntu/venv/bin:{{ ansible_env.PATH }}
+
+    - name: Create input directory for CSV files
+      file:
+        path: /home/ubuntu/input
+        state: directory
+        mode: '0755'
+
+    - name: Copy train.csv to the server
+      copy:
+        src: ./dataset/train.csv
+        dest: /home/ubuntu/input/train.csv
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy test.csv to the server
+      copy:
+        src: ./dataset/test.csv
+        dest: /home/ubuntu/input/test.csv
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy the .ipynb file to the server
+      copy:
+        src: ./ML_project.ipynb
+        dest: /home/ubuntu/ml_notebook.ipynb
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Execute and Convert the notebook to HTML
+      command: /home/ubuntu/venv/bin/jupyter nbconvert --to html --execute /home/ubuntu/ml_notebook.ipynb
+      register: nbconvert_output
+
+    - debug:
+        var: nbconvert_output.stdout
+
+    - name: Move the generated HTML to Nginx directory
+      command: mv /home/ubuntu/ml_notebook.html /var/www/html/ml_notebook.html
+
+    - name: Set correct permissions for the HTML file
+      file:
+        path: /var/www/html/ml_notebook.html
+        mode: '0644'
+        owner: www-data
+        group: www-data
+
+    - name: Start nginx service
+      service:
+        name: nginx
+        state: started
+        enabled: yes
